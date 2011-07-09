@@ -1,6 +1,7 @@
 import errno
 import socket
 from itertools import chain, imap
+from threading import Lock
 from redis.exceptions import ConnectionError, ResponseError, InvalidResponse
 
 class PythonParser(object):
@@ -266,14 +267,19 @@ class ConnectionPool(object):
         self._created_connections = 0
         self._available_connections = []
         self._in_use_connections = set()
+        self._pool_lock = Lock()
 
     def get_connection(self, command_name, *keys, **options):
         "Get a connection from the pool"
+        self._pool_lock.acquire()
         try:
-            connection = self._available_connections.pop()
-        except IndexError:
-            connection = self.make_connection()
-        self._in_use_connections.add(connection)
+            try:
+                connection = self._available_connections.pop()
+            except IndexError:
+                connection = self.make_connection()
+            self._in_use_connections.add(connection)
+        finally:
+            self._pool_lock.release()
         return connection
 
     def make_connection(self):
@@ -285,11 +291,20 @@ class ConnectionPool(object):
 
     def release(self, connection):
         "Releases the connection back to the pool"
-        self._in_use_connections.remove(connection)
-        self._available_connections.append(connection)
+        self._pool_lock.acquire()
+        try:
+            self._in_use_connections.remove(connection)
+            self._available_connections.append(connection)
+        finally:
+            self._pool_lock.release()
 
     def disconnect(self):
         "Disconnects all connections in the pool"
-        all_conns = chain(self._available_connections, self._in_use_connections)
-        for connection in all_conns:
-            connection.disconnect()
+        self._pool_lock.acquire()
+        try:
+            all_conns = chain(self._available_connections,
+                              self._in_use_connections)
+            for connection in all_conns:
+                connection.disconnect()
+        finally:
+            self._pool_lock.release()
