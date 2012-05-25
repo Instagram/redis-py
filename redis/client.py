@@ -1289,6 +1289,7 @@ class BasePipeline(object):
         self.shard_hint = shard_hint
 
         self.watching = False
+        self.in_scatter_gather = False
         self.reset()
 
     def __enter__(self):
@@ -1376,6 +1377,8 @@ class BasePipeline(object):
         At some other point, you can then run: pipe.execute(),
         which will execute all commands queued in the pipe.
         """
+        if self.in_scatter_gather:
+            raise RedisError("You must gather() your data before adding another command to the pipeline")
         self.command_stack.append((args, options))
         return self
 
@@ -1410,13 +1413,24 @@ class BasePipeline(object):
             data.append(r)
         return data
 
-    def _execute_pipeline(self, connection, commands):
+    def _execute_pipeline(self, connection, commands, scatter_gather=False):
         # build up all commands into a single request to increase network perf
         all_cmds = ''.join(starmap(connection.pack_command,
                                    [args for args, options in commands]))
         connection.send_packed_command(all_cmds)
-        return [self.parse_response(connection, args[0], **options)
-                for args, options in commands]
+        def _gather():
+            try:
+                return [self.parse_response(connection, args[0], **options)
+                        for args, options in commands]
+            finally:
+                if scatter_gather:
+                    self.in_scatter_gather = False
+                    self.reset()
+        if scatter_gather:
+            self.in_scatter_gather = True
+            return _gather
+        else:
+            return _gather()
 
     def parse_response(self, connection, command_name, **options):
         result = StrictRedis.parse_response(
@@ -1427,12 +1441,14 @@ class BasePipeline(object):
             self.watching = True
         return result
 
-    def execute(self):
+    def execute(self, scatter_gather=False):
         "Execute all the commands in the current pipeline"
         stack = self.command_stack
         if self.transaction or self.explicit_transaction:
             stack = [(('MULTI' ,), {})] + stack + [(('EXEC', ), {})]
             execute = self._execute_transaction
+            if scatter_gather:
+                raise RedisError("Transactions don't support scatter/gather")
         else:
             execute = self._execute_pipeline
 
@@ -1444,7 +1460,8 @@ class BasePipeline(object):
             self.connection = conn
 
         try:
-            return execute(conn, stack)
+            execute_kwargs = {'scatter_gather': scatter_gather} if scatter_gather else {}
+            return execute(conn, stack, **execute_kwargs)
         except ConnectionError:
             conn.disconnect()
             # if we were watching a variable, the watch is no longer valid since
@@ -1459,7 +1476,8 @@ class BasePipeline(object):
             # predicated on any state
             return execute(conn, stack)
         finally:
-            self.reset()
+            if not scatter_gather:
+                self.reset()
 
     def watch(self, *names):
         """
