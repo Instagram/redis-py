@@ -1,4 +1,5 @@
 from __future__ import with_statement
+import sys
 import redis
 import unittest
 
@@ -24,6 +25,44 @@ class PipelineTestCase(unittest.TestCase):
                     [('z1', 2.0), ('z2', 4)],
                 ]
                 )
+
+    def test_transaction_cant_scatter_gather(self):
+        with self.client.pipeline(transaction=True) as pipe:
+            pipe.set('a', 'a1').set('b', 'b1').set('c', 'c1')
+            self.assertRaises(redis.RedisError, pipe.execute, scatter_gather = True)
+
+    def test_pipeline_set_scatter_gather(self):
+        with self.client.pipeline(transaction=False) as pipe:
+            pipe.set('a', 'a1').set('b', 'b1').set('c', 'c1')
+            gather_fn = pipe.execute(scatter_gather = True)
+            self.assert_(callable(gather_fn))
+            self.assertEquals(gather_fn(), [True, True, True])
+            self.assertEquals(self.client['a'], 'a1')
+            self.assertEquals(self.client['b'], 'b1')
+            self.assertEquals(self.client['c'], 'c1')
+
+    def test_pipeline_scatter_without_gather_reuse_pipeline(self):
+        p = self.client.pipeline(transaction = False)
+        p.set('hi', 'ok')
+        p.get('hi')
+        p.execute(scatter_gather = True)
+        self.assertRaises(redis.RedisError, p.zadd, 'hi', 'ok', 1)
+
+    def test_pipeline_scatter_with_gather_reuse_pipeline(self):
+        p = self.client.pipeline(transaction = False)
+        p.set('hi', 'ok')
+        p.get('hi')
+        gather_fn = p.execute(scatter_gather = True)
+        gather_fn()
+        self.assert_(p.zadd('hi', 'ok', 1))
+
+    def test_pipeline_get_scatter_gather(self):
+        self.client.mset({'a': 'a1', 'b': 'b2'})
+        with self.client.pipeline(transaction=False) as pipe:
+            pipe.get('a')
+            pipe.get('b')
+            gather_fn = pipe.execute(scatter_gather = True)
+            self.assertEquals(gather_fn(), ['a1', 'b2'])
 
     def test_pipeline_no_transaction(self):
         with self.client.pipeline(transaction=False) as pipe:
