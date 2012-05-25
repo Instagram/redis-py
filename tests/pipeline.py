@@ -1,5 +1,4 @@
 from __future__ import with_statement
-import sys
 import redis
 import unittest
 
@@ -55,6 +54,14 @@ class PipelineTestCase(unittest.TestCase):
         gather_fn = p.execute(scatter_gather = True)
         gather_fn()
         self.assert_(p.zadd('hi', 'ok', 1))
+
+    def test_pipeline_scatter_with_gather_cant_gather_twice(self):
+        p = self.client.pipeline(transaction = False)
+        p.set('hi', 'ok')
+        p.get('hi')
+        gather_fn = p.execute(scatter_gather = True)
+        gather_fn()
+        self.assertRaises(redis.RedisError, gather_fn)
 
     def test_pipeline_get_scatter_gather(self):
         self.client.mset({'a': 'a1', 'b': 'b2'})

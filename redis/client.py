@@ -1419,6 +1419,8 @@ class BasePipeline(object):
                                    [args for args, options in commands]))
         connection.send_packed_command(all_cmds)
         def _gather():
+            if scatter_gather and not self.in_scatter_gather:
+                raise RedisError("Can't gather results twice")
             try:
                 return [self.parse_response(connection, args[0], **options)
                         for args, options in commands]
