@@ -1459,8 +1459,8 @@ class BasePipeline(object):
             # back to the pool after we're done
             self.connection = conn
 
+        execute_kwargs = {'scatter_gather': scatter_gather} if scatter_gather else {}
         try:
-            execute_kwargs = {'scatter_gather': scatter_gather} if scatter_gather else {}
             return execute(conn, stack, **execute_kwargs)
         except ConnectionError:
             conn.disconnect()
@@ -1474,7 +1474,7 @@ class BasePipeline(object):
                                  "one or more keys")
             # otherwise, it's safe to retry since the transaction isn't
             # predicated on any state
-            return execute(conn, stack)
+            return execute(conn, stack, **execute_kwargs)
         finally:
             if not scatter_gather:
                 self.reset()
