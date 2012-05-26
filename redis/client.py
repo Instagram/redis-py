@@ -1413,7 +1413,7 @@ class BasePipeline(object):
             data.append(r)
         return data
 
-    def _execute_pipeline(self, connection, commands, scatter_gather=False):
+    def _execute_pipeline(self, connection, commands, scatter_gather=False, retry=True):
         # build up all commands into a single request to increase network perf
         all_cmds = ''.join(starmap(connection.pack_command,
                                    [args for args, options in commands]))
@@ -1424,8 +1424,15 @@ class BasePipeline(object):
             try:
                 return [self.parse_response(connection, args[0], **options)
                         for args, options in commands]
+	    except ConnectionError, e:
+		connection.disconnect()
+                self.in_scatter_gather = False
+                if retry:
+                    return self._execute_pipeline(connection, commands, scatter_gather=False, retry=False)
+                else:
+                    raise e
             finally:
-                if scatter_gather:
+                if self.in_scatter_gather:
                     self.in_scatter_gather = False
                     self.reset()
         if scatter_gather:
