@@ -1284,7 +1284,8 @@ class BasePipeline(object):
         self.connection = None
         self.response_callbacks = response_callbacks
         if transaction:
-            raise Exception("Transactions are no longer supported")
+            pass # TODO enable this when we're all nutcracker-d
+            # raise RedisError("Transactions are no longer supported")
         self.transaction = transaction
         self.shard_hint = shard_hint
 
