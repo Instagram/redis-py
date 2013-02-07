@@ -9,6 +9,7 @@ from redis.exceptions import (
     ConnectionError,
     DataError,
     InvalidResponse,
+    NoScriptError,
     PubSubError,
     RedisError,
     ResponseError,
@@ -23,5 +24,5 @@ __all__ = [
     'Redis', 'StrictRedis', 'ConnectionPool',
     'Connection', 'UnixDomainSocketConnection',
     'RedisError', 'ConnectionError', 'ResponseError', 'AuthenticationError',
-    'InvalidResponse', 'DataError', 'PubSubError', 'WatchError',
+    'InvalidResponse', 'NoScriptError', 'DataError', 'PubSubError', 'WatchError',
     ]
